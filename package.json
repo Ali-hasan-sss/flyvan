@@ -1,0 +1,25 @@
+{
+  "name": "flyvan",
+  "private": true,
+  "packageManager": "pnpm@10.10.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @flyvan/database generate",
+    "db:migrate": "pnpm --filter @flyvan/database exec prisma migrate dev",
+    "db:seed": "pnpm --filter @flyvan/database seed"
+  },
+  "devDependencies": {
+    "prettier": "3.9.10",
+    "turbo": "2.11.9",
+    "typescript": "7.0.2"
+  }
+}

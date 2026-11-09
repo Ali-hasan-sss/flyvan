@@ -1,0 +1,21 @@
+name: flyvan
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: flyvan
+      POSTGRES_PASSWORD: flyvan
+      POSTGRES_DB: flyvan
+    ports:
+      - "5434:5432"
+    volumes:
+      - flyvan_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flyvan -d flyvan"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  flyvan_postgres:

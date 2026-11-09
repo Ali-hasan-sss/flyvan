@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.next/
+.turbo/
+.expo/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+packages/database/src/generated/
+apps/api/dist/
+apps/api/uploads/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,41 @@
+{
+  "name": "@flyvan/database",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "generate": "prisma generate",
+    "build": "prisma generate && tsc -p tsconfig.build.json",
+    "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "seed": "prisma generate && tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@flyvan/types": "workspace:*",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "argon2": "0.45.1",
+    "dotenv": "18.0.8",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@flyvan/config": "workspace:*",
+    "@types/node": "26.6.5",
+    "@types/pg": "8.23.1",
+    "eslint": "10.13.0",
+    "prisma": "7.10.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

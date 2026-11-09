@@ -1,0 +1,11 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": {
+      "@flyvan/ui/tokens": ["../../packages/ui/src/tokens.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}

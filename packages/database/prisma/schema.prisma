@@ -1,0 +1,762 @@
+// Fly Van data model — phase 1 foundation.
+// Financial rows are append-only or amount-immutable. See the initial migration triggers.
+// Passenger cash collected by a driver is an operational trip field, never a ledger entry.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PLATFORM_OWNER
+  ADMIN
+  DISPATCHER
+  FINANCE
+  DRIVER
+  PASSENGER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum Permission {
+  USERS_MANAGE
+  PLATFORM_SETTINGS_MANAGE
+  DRIVERS_REVIEW
+  VEHICLES_REVIEW
+  COMMISSION_POLICY_MANAGE
+  DRIVER_COMMISSION_MANAGE
+  CREDIT_LIMIT_MANAGE
+  CREDIT_EXCEPTION_GRANT
+  BOOKINGS_MANAGE
+  FARE_LOCK
+  FARE_ADJUST
+  TRIPS_DISPATCH
+  TRIPS_VIEW_ALL
+  TRIPS_OPERATE_OWN
+  FINANCE_VIEW
+  FINANCE_RECORD_PAYMENT
+  FINANCE_REVIEW_SETTLEMENT
+  FINANCE_APPROVE_SETTLEMENT
+  REPORTS_VIEW
+  AUDIT_VIEW
+  SERVICE_AREAS_MANAGE
+  OWN_PROFILE_VIEW
+  OWN_SERVICE_AREAS_MANAGE
+  OWN_FINANCE_VIEW
+  OWN_BOOKINGS_VIEW
+}
+
+enum DriverApprovalStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+  REJECTED
+}
+
+enum VehicleApprovalStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+  REJECTED
+}
+
+enum DocumentOwnerType {
+  DRIVER
+  VEHICLE
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum ServiceAreaKind {
+  CITY
+  DISTRICT
+  GEOFENCE
+}
+
+enum ServiceAreaPreference {
+  TARGET
+  EXCLUDED
+}
+
+enum DriverServiceAreaStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ENDED
+}
+
+enum TripDirection {
+  OUTBOUND
+  RETURN
+  INDEPENDENT
+  ROUND_TRIP
+}
+
+enum BookingStatus {
+  DRAFT
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum TripStatus {
+  PENDING_ASSIGNMENT
+  OFFERED
+  ASSIGNED
+  DRIVER_ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+  DISPUTED
+}
+
+enum OfferSource {
+  NEARBY
+  SERVICE_AREA
+  MANUAL_DISPATCH
+  MATCHING_ENGINE
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum BoardingStatus {
+  EXPECTED
+  BOARDED
+  NO_SHOW
+  CANCELLED
+}
+
+enum EventSource {
+  DRIVER_APP
+  CONTROL
+  PASSENGER_CODE
+  SYSTEM
+}
+
+enum TripEventType {
+  STATUS_CHANGED
+  ASSIGNMENT_CHANGED
+  BOARDING_RECORDED
+  PASSENGER_FARE_COLLECTED
+  NOTE
+}
+
+enum CommissionStatus {
+  PENDING
+  DUE
+  PARTIALLY_PAID
+  PAID
+  REVERSED
+  DISPUTED
+}
+
+enum SettlementStatus {
+  RECORDED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  REVERSED
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+enum LedgerEntryType {
+  COMMISSION_ACCRUAL
+  DRIVER_PAYMENT
+  CREDIT_ADJUSTMENT
+  DEBIT_ADJUSTMENT
+  REVERSAL
+}
+
+model User {
+  id             String     @id @default(uuid()) @db.Uuid
+  email          String?    @unique
+  phone          String?    @unique
+  passwordHash   String
+  displayName    String
+  role           UserRole
+  status         UserStatus @default(ACTIVE)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  disabledAt     DateTime?
+  disabledReason String?
+
+  driverProfile              DriverProfile?
+  passengerContact           PassengerContact?
+  refreshTokens              RefreshToken[]
+  auditLogs                  AuditLog[]                 @relation("AuditActor")
+  bookingsCreated            Booking[]                  @relation("BookingCreatedBy")
+  bookingsUpdated            Booking[]                  @relation("BookingUpdatedBy")
+  commissionPoliciesCreated  CommissionPolicy[]         @relation("CommissionPolicyCreatedBy")
+  commissionOverridesCreated DriverCommissionOverride[] @relation("CommissionOverrideCreatedBy")
+  ledgerEntriesCreated       LedgerEntry[]              @relation("LedgerCreatedBy")
+  settlementsReceived        Settlement[]               @relation("SettlementReceivedBy")
+  settlementsReviewed        Settlement[]               @relation("SettlementReviewedBy")
+  creditExceptionsGranted    Trip[]                     @relation("CreditExceptionBy")
+  passengerFaresRecorded     Trip[]                     @relation("PassengerFareCollectedBy")
+  documentsReviewed          ComplianceDocument[]       @relation("DocumentReviewedBy")
+  settingsUpdated            PlatformSetting[]          @relation("SettingUpdatedBy")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?   @unique @db.Uuid
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model RolePermission {
+  role       UserRole
+  permission Permission
+  createdAt  DateTime   @default(now())
+
+  @@id([role, permission])
+}
+
+model PlatformSetting {
+  key         String   @id
+  value       Json
+  updatedAt   DateTime @updatedAt
+  updatedById String?  @db.Uuid
+  updatedBy   User?    @relation("SettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+model DriverProfile {
+  id                    String               @id @default(uuid()) @db.Uuid
+  userId                String               @unique @db.Uuid
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  approvalStatus        DriverApprovalStatus @default(PENDING)
+  nearbyRadiusMeters    Int                  @default(3000)
+  acceptsNearbyRequests Boolean              @default(true)
+  /// Administrative hold. Credit-limit blocking is evaluated per assignment, not stored here.
+  assignmentBlocked     Boolean              @default(false)
+  assignmentBlockReason String?
+  /// Soft delete. The row stays for trips and finance, and is hidden from the active driver list.
+  deletedAt             DateTime?
+  /// Optional public profile photo, such as /api/files/<id>.jpg.
+  imageUrl              String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  vehicleAssignments  DriverVehicleAssignment[]
+  serviceAreas        DriverServiceArea[]
+  documents           ComplianceDocument[]
+  commissionOverrides DriverCommissionOverride[]
+  financialAccounts   DriverFinancialAccount[]
+  trips               Trip[]
+  tripVehicles        TripVehicle[]
+  offers              TripOffer[]
+  commissions         TripCommission[]
+  ledgerEntries       LedgerEntry[]
+  settlements         Settlement[]
+
+  @@index([deletedAt, createdAt])
+}
+
+model DriverCommissionOverride {
+  id              String        @id @default(uuid()) @db.Uuid
+  driverProfileId String        @db.Uuid
+  driverProfile   DriverProfile @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  ratePercent     Decimal       @db.Decimal(6, 3)
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?
+  reason          String
+  createdById     String        @db.Uuid
+  createdBy       User          @relation("CommissionOverrideCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime      @default(now())
+
+  @@index([driverProfileId, effectiveFrom])
+}
+
+model CommissionPolicy {
+  id            String    @id @default(uuid()) @db.Uuid
+  ratePercent   Decimal   @db.Decimal(6, 3)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  reason        String?
+  createdById   String    @db.Uuid
+  createdBy     User      @relation("CommissionPolicyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt     DateTime  @default(now())
+
+  @@index([effectiveFrom])
+}
+
+model Vehicle {
+  id             String                @id @default(uuid()) @db.Uuid
+  plateNumber    String                @unique
+  capacity       Int
+  vehicleType    String
+  approvalStatus VehicleApprovalStatus @default(PENDING)
+  /// Public file URL, such as /api/files/<id>.jpg. Required for newly created vehicles.
+  imageUrl       String?
+  /// Optional vehicle document URL. Not required for approval.
+  documentUrl    String?
+  /// Soft-delete marker. Archived vehicles stay in history and leave the active list.
+  deletedAt      DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  assignments DriverVehicleAssignment[]
+  documents   ComplianceDocument[]
+  trips        Trip[]
+  tripVehicles TripVehicle[]
+
+  @@index([deletedAt, createdAt])
+}
+
+model DriverVehicleAssignment {
+  id              String        @id @default(uuid()) @db.Uuid
+  driverProfileId String        @db.Uuid
+  driverProfile   DriverProfile @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  vehicleId       String        @db.Uuid
+  vehicle         Vehicle       @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  isPrimary       Boolean       @default(false)
+  activeFrom      DateTime      @default(now())
+  activeTo        DateTime?
+  createdAt       DateTime      @default(now())
+
+  @@index([driverProfileId, activeTo])
+  @@index([vehicleId, activeTo])
+}
+
+model ComplianceDocument {
+  id              String             @id @default(uuid()) @db.Uuid
+  ownerType       DocumentOwnerType
+  driverProfileId String?            @db.Uuid
+  driverProfile   DriverProfile?     @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  vehicleId       String?            @db.Uuid
+  vehicle         Vehicle?           @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  kind            String
+  expiresOn       DateTime?          @db.Date
+  status          DocumentStatus     @default(PENDING)
+  storageKey      String?
+  reviewedAt      DateTime?
+  reviewedById    String?            @db.Uuid
+  reviewedBy      User?              @relation("DocumentReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([driverProfileId])
+  @@index([vehicleId])
+  @@index([status, expiresOn])
+}
+
+model ServiceArea {
+  id              String          @id @default(uuid()) @db.Uuid
+  name            String
+  kind            ServiceAreaKind
+  parentId        String?         @db.Uuid
+  parent          ServiceArea?    @relation("ServiceAreaTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children        ServiceArea[]   @relation("ServiceAreaTree")
+  isActive        Boolean         @default(true)
+  centerLatitude  Decimal?        @db.Decimal(9, 6)
+  centerLongitude Decimal?        @db.Decimal(9, 6)
+  /// GeoJSON polygon for a future geofence check. Not a road network.
+  boundary        Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  driverLinks DriverServiceArea[]
+  bookings    Booking[]
+
+  @@index([kind, isActive])
+}
+
+model Destination {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  latitude    Decimal  @db.Decimal(9, 6)
+  longitude   Decimal  @db.Decimal(9, 6)
+  /// Landmark text shown with the pin. The pin is the location used later for the driver route.
+  addressNote String?
+  /// Operational note for the driver, such as a gate or parking point.
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  trips Trip[]
+
+  @@index([isActive, name])
+}
+
+model DriverServiceArea {
+  id              String                  @id @default(uuid()) @db.Uuid
+  driverProfileId String                  @db.Uuid
+  driverProfile   DriverProfile           @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  serviceAreaId   String                  @db.Uuid
+  serviceArea     ServiceArea             @relation(fields: [serviceAreaId], references: [id], onDelete: Restrict)
+  preference      ServiceAreaPreference   @default(TARGET)
+  status          DriverServiceAreaStatus @default(PENDING)
+  startsOn        DateTime?               @db.Date
+  endsOn          DateTime?               @db.Date
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([driverProfileId, status])
+  @@index([serviceAreaId, status])
+}
+
+model PassengerContact {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String?  @unique @db.Uuid
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  fullName    String
+  phone       String   @unique
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bookings       Booking[]
+  tripPassengers TripPassenger[]
+}
+
+model Institution {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  city      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+
+  @@index([name])
+}
+
+model Booking {
+  id                 String        @id @default(uuid()) @db.Uuid
+  reference          String        @unique
+  passengerContactId String        @db.Uuid
+  passengerContact   PassengerContact @relation(fields: [passengerContactId], references: [id], onDelete: Restrict)
+  institutionId      String?       @db.Uuid
+  institution        Institution?  @relation(fields: [institutionId], references: [id], onDelete: SetNull)
+  direction          TripDirection
+  status             BookingStatus @default(DRAFT)
+  pickupLabel        String
+  pickupLatitude     Decimal?      @db.Decimal(9, 6)
+  pickupLongitude    Decimal?      @db.Decimal(9, 6)
+  dropoffLabel       String
+  dropoffLatitude    Decimal?      @db.Decimal(9, 6)
+  dropoffLongitude   Decimal?      @db.Decimal(9, 6)
+  serviceAreaId      String?       @db.Uuid
+  serviceArea        ServiceArea?  @relation(fields: [serviceAreaId], references: [id], onDelete: SetNull)
+  scheduledAt        DateTime
+  fareAmount         Decimal?      @db.Decimal(14, 2)
+  fareCurrency       String?       @db.Char(3)
+  fareLockedAt       DateTime?
+  notes              String?
+  createdById        String?       @db.Uuid
+  createdBy          User?         @relation("BookingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedById        String?       @db.Uuid
+  updatedBy          User?         @relation("BookingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  cancelReason       String?
+  cancelledAt        DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  passengers TripPassenger[]
+
+  @@index([status, scheduledAt])
+  @@index([passengerContactId])
+  @@index([direction, scheduledAt])
+}
+
+model Trip {
+  id                         String       @id @default(uuid()) @db.Uuid
+  reference                  String       @unique
+  destinationId              String       @db.Uuid
+  destination                Destination  @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+  /// A trip is one direction. ROUND_TRIP belongs on the booking, which joins two trips.
+  direction                  TripDirection
+  /// Departure on the service date. A daily trip repeats this clock time every day.
+  scheduledAt                DateTime
+  /// Planned arrival at the destination. Pickup times stay before this moment.
+  arrivesAt                  DateTime
+  /// When true, the same departure and arrival clock times repeat every day from the service date.
+  isDaily                    Boolean      @default(true)
+  /// Set on a one-time vehicle run. The parent trip stays the permanent route and keeps its vehicle pool.
+  parentTripId               String?      @db.Uuid
+  parent                     Trip?        @relation("TripRuns", fields: [parentTripId], references: [id], onDelete: Restrict)
+  runs                       Trip[]       @relation("TripRuns")
+  /// Planned driver start for the road route. This is not a live GPS fix.
+  originLatitude             Decimal?     @db.Decimal(9, 6)
+  originLongitude            Decimal?     @db.Decimal(9, 6)
+  notes                      String?
+  status                     TripStatus   @default(PENDING_ASSIGNMENT)
+  driverProfileId            String?      @db.Uuid
+  driverProfile              DriverProfile? @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  vehicleId                  String?      @db.Uuid
+  vehicle                    Vehicle?     @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  assignmentSource           OfferSource?
+  assignedAt                 DateTime?
+  driverArrivedAt            DateTime?
+  startedAt                  DateTime?
+  endedAt                    DateTime?
+  /// Driver reported a breakdown or incident. The trip stays open until dispatch cancels it.
+  breakdownReportedAt        DateTime?
+  breakdownNote              String?
+  /// Operational mark that the driver received the passenger's cash fare. Not a company settlement.
+  passengerFareCollectedAt   DateTime?
+  passengerFareCollectedById String?      @db.Uuid
+  passengerFareCollectedBy   User?        @relation("PassengerFareCollectedBy", fields: [passengerFareCollectedById], references: [id], onDelete: SetNull)
+  creditExceptionReason      String?
+  creditExceptionById        String?      @db.Uuid
+  creditExceptionBy          User?        @relation("CreditExceptionBy", fields: [creditExceptionById], references: [id], onDelete: SetNull)
+  createdAt                  DateTime     @default(now())
+  updatedAt                  DateTime     @updatedAt
+
+  offers      TripOffer[]
+  passengers  TripPassenger[]
+  events      TripEvent[]
+  commission  TripCommission?
+  vehicles    TripVehicle[]
+
+  @@index([status, scheduledAt])
+  @@index([driverProfileId, status])
+  @@index([destinationId, scheduledAt])
+  @@index([direction, scheduledAt])
+  @@index([parentTripId, scheduledAt])
+  @@index([breakdownReportedAt])
+}
+
+model TripVehicle {
+  id              String        @id @default(uuid()) @db.Uuid
+  tripId          String        @db.Uuid
+  trip            Trip          @relation(fields: [tripId], references: [id], onDelete: Restrict)
+  vehicleId       String        @db.Uuid
+  vehicle         Vehicle       @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  driverProfileId String        @db.Uuid
+  driverProfile   DriverProfile @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  createdAt       DateTime      @default(now())
+  /// Set when dispatch takes this vehicle off the trip. The trip keeps running on the other vehicles.
+  disabledAt      DateTime?
+  disableReason   String?
+
+  @@unique([tripId, vehicleId])
+  @@index([driverProfileId])
+}
+
+model TripOffer {
+  id               String        @id @default(uuid()) @db.Uuid
+  tripId           String        @db.Uuid
+  trip             Trip          @relation(fields: [tripId], references: [id], onDelete: Restrict)
+  driverProfileId  String        @db.Uuid
+  driverProfile    DriverProfile @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  source           OfferSource
+  status           OfferStatus   @default(PENDING)
+  matchReason      String
+  /// Diagnostic straight-line distance only. Never a road duration.
+  straightLineMeters Int?
+  expiresAt        DateTime?
+  respondedAt      DateTime?
+  createdAt        DateTime      @default(now())
+
+  @@index([driverProfileId, status])
+  @@index([tripId, status])
+}
+
+model TripPassenger {
+  id                   String         @id @default(uuid()) @db.Uuid
+  tripId               String         @db.Uuid
+  trip                 Trip           @relation(fields: [tripId], references: [id], onDelete: Restrict)
+  bookingId            String         @db.Uuid
+  booking              Booking        @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  passengerContactId   String         @db.Uuid
+  passengerContact     PassengerContact @relation(fields: [passengerContactId], references: [id], onDelete: Restrict)
+  /// Pickup for this leg. On a round trip the return leg starts at the outbound destination.
+  pickupLatitude       Decimal?       @db.Decimal(9, 6)
+  pickupLongitude      Decimal?       @db.Decimal(9, 6)
+  pickupNote           String?
+  /// Planned pickup clock time. Ordered from the pins; it is not a road duration.
+  pickupAt             DateTime?
+  fareAmount           Decimal?       @db.Decimal(14, 2)
+  fareCurrency         String?        @db.Char(3)
+  fareLockedAt         DateTime?
+  /// The passenger already paid this leg's fare to the company, so the driver does not collect it. Not a commission settlement.
+  farePaidToCompany    Boolean        @default(false)
+  /// Seats reserved by this passenger on the leg. One row can hold more than one seat.
+  seatCount            Int            @default(1)
+  boardingStatus       BoardingStatus @default(EXPECTED)
+  verificationCodeHash String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  boardingEvents BoardingEvent[]
+
+  @@unique([tripId, passengerContactId])
+  @@index([tripId, boardingStatus])
+  @@index([bookingId])
+}
+
+model BoardingEvent {
+  id              String         @id @default(uuid()) @db.Uuid
+  tripPassengerId String         @db.Uuid
+  tripPassenger   TripPassenger  @relation(fields: [tripPassengerId], references: [id], onDelete: Restrict)
+  status          BoardingStatus
+  occurredAt      DateTime
+  recordedAt      DateTime       @default(now())
+  source          EventSource
+  actorId         String?        @db.Uuid
+  createdAt       DateTime       @default(now())
+
+  @@index([tripPassengerId, recordedAt])
+}
+
+model TripEvent {
+  id         String        @id @default(uuid()) @db.Uuid
+  tripId     String        @db.Uuid
+  trip       Trip          @relation(fields: [tripId], references: [id], onDelete: Restrict)
+  type       TripEventType
+  source     EventSource
+  actorId    String?       @db.Uuid
+  occurredAt DateTime
+  recordedAt DateTime      @default(now())
+  payload    Json?
+  createdAt  DateTime      @default(now())
+
+  @@index([tripId, recordedAt])
+}
+
+model TripCommission {
+  id                    String           @id @default(uuid()) @db.Uuid
+  tripId                String           @unique @db.Uuid
+  trip                  Trip             @relation(fields: [tripId], references: [id], onDelete: Restrict)
+  driverProfileId       String           @db.Uuid
+  driverProfile         DriverProfile    @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  fareAmount            Decimal          @db.Decimal(14, 2)
+  commissionRateApplied Decimal          @db.Decimal(6, 3)
+  commissionAmount      Decimal          @db.Decimal(14, 2)
+  currency              String           @db.Char(3)
+  status                CommissionStatus @default(DUE)
+  accruedAt             DateTime         @default(now())
+
+  ledgerEntry LedgerEntry?
+  allocations SettlementAllocation[]
+
+  @@index([driverProfileId, status, accruedAt])
+  @@index([currency, status])
+}
+
+model DriverFinancialAccount {
+  id                String        @id @default(uuid()) @db.Uuid
+  driverProfileId   String        @db.Uuid
+  driverProfile     DriverProfile @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  currency          String        @db.Char(3)
+  creditLimitAmount Decimal       @db.Decimal(14, 2)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@unique([driverProfileId, currency])
+}
+
+model LedgerEntry {
+  id               String          @id @default(uuid()) @db.Uuid
+  driverProfileId  String          @db.Uuid
+  driverProfile    DriverProfile   @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  currency         String          @db.Char(3)
+  amount           Decimal         @db.Decimal(14, 2)
+  direction        LedgerDirection
+  type             LedgerEntryType
+  idempotencyKey   String          @unique
+  tripCommissionId String?         @unique @db.Uuid
+  tripCommission   TripCommission? @relation(fields: [tripCommissionId], references: [id], onDelete: Restrict)
+  settlementId     String?         @db.Uuid
+  settlement       Settlement?     @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  reversesEntryId  String?         @unique @db.Uuid
+  reversesEntry    LedgerEntry?    @relation("LedgerReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
+  reversedBy       LedgerEntry?    @relation("LedgerReversal")
+  reason           String?
+  createdById      String          @db.Uuid
+  createdBy        User            @relation("LedgerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt        DateTime        @default(now())
+
+  @@index([driverProfileId, currency, createdAt])
+  @@index([type, createdAt])
+}
+
+model Settlement {
+  id              String           @id @default(uuid()) @db.Uuid
+  driverProfileId String           @db.Uuid
+  driverProfile   DriverProfile    @relation(fields: [driverProfileId], references: [id], onDelete: Restrict)
+  amount          Decimal          @db.Decimal(14, 2)
+  currency        String           @db.Char(3)
+  method          String
+  receivedAt      DateTime
+  receiptNumber   String           @unique
+  idempotencyKey  String           @unique
+  receivedById    String           @db.Uuid
+  receivedBy      User             @relation("SettlementReceivedBy", fields: [receivedById], references: [id], onDelete: Restrict)
+  status          SettlementStatus @default(RECORDED)
+  reviewNote      String?
+  reviewedById    String?          @db.Uuid
+  reviewedBy      User?            @relation("SettlementReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?
+  createdAt       DateTime         @default(now())
+
+  ledgerEntries LedgerEntry[]
+  allocations   SettlementAllocation[]
+
+  @@index([driverProfileId, status, receivedAt])
+  @@index([currency, status])
+}
+
+model SettlementAllocation {
+  id               String         @id @default(uuid()) @db.Uuid
+  settlementId     String         @db.Uuid
+  settlement       Settlement     @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  tripCommissionId String         @db.Uuid
+  tripCommission   TripCommission @relation(fields: [tripCommissionId], references: [id], onDelete: Restrict)
+  amount           Decimal        @db.Decimal(14, 2)
+  currency         String         @db.Char(3)
+  createdAt        DateTime       @default(now())
+
+  @@unique([settlementId, tripCommissionId])
+  @@index([tripCommissionId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String
+  reason     String?
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+}

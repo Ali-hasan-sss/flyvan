@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "فلاي فان — السائق",
+    "slug": "flyvan-driver",
+    "scheme": "flyvan",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.flyvan.driver",
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+    },
+    "ios": {
+      "bundleIdentifier": "com.flyvan.driver",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "فلاي فان يستخدم موقعك لترتيب صعود الركاب على طريق الرحلة."
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "فلاي فان يستخدم موقعك لترتيب صعود الركاب على طريق الرحلة."
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:3001"
+    }
+  }
+}

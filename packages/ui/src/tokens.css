@@ -1,0 +1,37 @@
+:root {
+  --fv-primary: #38bdf8;
+  --fv-primary-strong: #0284c7;
+  --fv-primary-strong-hover: color-mix(in srgb, var(--fv-primary-strong) 88%, black);
+  --fv-page: #f4faff;
+  --fv-card: #ffffff;
+  --fv-ink: #0f2742;
+  --fv-muted: #64748b;
+  --fv-line: #dcecf8;
+  --fv-success: #0f766e;
+  --fv-success-soft: #ccfbf1;
+  --fv-warning: #b45309;
+  --fv-warning-soft: #fef3c7;
+  --fv-danger: #b91c1c;
+  --fv-danger-soft: #fee2e2;
+  --fv-info-soft: #e0f2fe;
+  --fv-teal: #0d9488;
+  --fv-teal-strong: #0f766e;
+  --fv-surface: #f5fbff;
+  --fv-radius-control: 10px;
+  --fv-radius-card: 14px;
+  --fv-shadow: 0 1px 2px rgba(15, 39, 66, 0.05);
+  --fv-font: var(--font-arabic), "Segoe UI", tahoma, sans-serif;
+  --fv-font-display: var(--font-display), var(--font-arabic), "Segoe UI", tahoma, sans-serif;
+  color: var(--fv-ink);
+  background: var(--fv-page);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
